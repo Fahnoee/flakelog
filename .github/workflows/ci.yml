@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Format, vet, test
+        run: |
+          nix develop -c sh -c 'test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }'
+          nix develop -c go vet ./...
+          nix develop -c go test -race ./...
+      - name: Build
+        run: nix build -L && ./result/bin/flakelog -version
+
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - id: flakelog
+        uses: ./
+        with:
+          from: testdata/old.lock
+          to: testdata/new.lock
+      - run: grep -q "6 added" "${{ steps.flakelog.outputs.markdown-file }}"

@@ -1,0 +1,66 @@
+name: flakelog
+description: Write a readable changelog of flake.lock changes, for PR bodies and comments.
+author: Fahnoee
+branding:
+  icon: git-commit
+  color: blue
+
+inputs:
+  from:
+    description: Old lock file path or git revision.
+    default: HEAD
+  to:
+    description: New lock file path or git revision. Empty means the working tree.
+    default: ""
+  lock:
+    description: Path to flake.lock.
+    default: flake.lock
+  all:
+    description: Include inputs of inputs.
+    default: "false"
+  notable:
+    description: Notable commits to list per input.
+    default: "8"
+  heading:
+    description: Markdown heading. Empty means a summary of the changes.
+    default: ""
+  output:
+    description: File to write the Markdown to.
+    default: flakelog.md
+  github-token:
+    description: Token for the GitHub API (commit details and rate limits).
+    default: ${{ github.token }}
+
+outputs:
+  markdown-file:
+    description: Path of the written Markdown file.
+    value: ${{ steps.run.outputs.file }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        FROM: ${{ inputs.from }}
+        TO: ${{ inputs.to }}
+        LOCK: ${{ inputs.lock }}
+        ALL: ${{ inputs.all }}
+        NOTABLE: ${{ inputs.notable }}
+        HEADING: ${{ inputs.heading }}
+        OUTPUT: ${{ inputs.output }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        if ! command -v nix >/dev/null; then
+          echo "::error::flakelog needs Nix; add cachix/install-nix-action before this step"
+          exit 1
+        fi
+        args=(-f markdown -lock "$LOCK" -notable "$NOTABLE")
+        [[ "$ALL" == "true" ]] && args+=(-all)
+        [[ -n "$HEADING" ]] && args+=(-heading "$HEADING")
+        args+=("$FROM")
+        [[ -n "$TO" ]] && args+=("$TO")
+        nix run "path:$ACTION_PATH" -- "${args[@]}" > "$OUTPUT"
+        cat "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+        echo "file=$OUTPUT" >> "$GITHUB_OUTPUT"
